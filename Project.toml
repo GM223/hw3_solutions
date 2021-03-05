@@ -1,0 +1,15 @@
+name = "hw3"
+uuid = "649f48ad-c126-4f13-aeba-2a5df8a20e42"
+authors = ["Brian Jackson <bjack205@gmail.com>"]
+version = "0.1.0"
+
+[deps]
+BlockArrays = "8e7c35d0-a365-5155-bbbb-fb81a777f24e"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+Printf = "de0858da-6303-5e67-8744-51eddeeeb8d7"
+RobotDynamics = "38ceca67-d8d3-44e8-9852-78a5596522e1"
+RobotZoo = "74be38bb-dcc2-4b9e-baf3-d6373cd95f10"
+SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
+StaticArrays = "90137ffa-7385-5640-81b9-e52037218182"
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
