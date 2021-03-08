@@ -2,6 +2,19 @@ using RobotDynamics
 using StaticArrays
 using LinearAlgebra
 
+@doc raw"""
+    QuadraticCost
+
+Represents a stage cost function of the form
+
+```math
+\frac{1}{2} x^T Q x + q^T x + \frac{1}{2} u^T R u + r^T u + c
+```
+
+# Methods
+    stagecost(cost, x, u)  # evaluate the stage cost at x,u
+    termcost(cost, x)      # evaluate the terminal cost (assumes u is zero)
+"""
 struct QuadraticCost{n,m,T}
     Q::Diagonal{T,SVector{n,T}}
     R::Diagonal{T,SVector{m,T}}
@@ -10,6 +23,15 @@ struct QuadraticCost{n,m,T}
     c::T
 end
 
+@doc raw"""
+    LQRCost(Q, R, xf, uf)
+
+Creates a `QuadraticCost` cost function of the form:
+
+```math
+\frac{1}{2} (x^T - x_f) Q (x - x_f) + \frac{1}{2} (u^T - u_f) R (u - u_f)
+```
+"""
 function LQRCost(Q::AbstractMatrix, R::AbstractMatrix, xf, uf=zeros(size(R,1)))
     n,m = length(xf), length(uf)
     Q = Diagonal(SVector{n}(diag(Q)))
@@ -31,17 +53,43 @@ function termcost(cost::QuadraticCost, x, u=nothing)
     return 0.5*x'Q*x + q'x + c 
 end
 
+"""
+    NLP{n,m,L,Q}
 
+Represents a (N)on(L)inear (P)rogram of a trajectory optimization problem,
+with a dynamics model of type `L`, a quadratic cost function, horizon `T`, 
+and initial and final state `x0`, `xf`.
+
+# Constructor
+    NLP(model, obj, tf, T, x0, xf, [integration])
+
+# Basic Methods
+    Base.size(nlp)    # returns (n,m,T)
+    num_ineq(nlp)     # number of inequality constraints
+    num_eq(nlp)       # number of equality constraints
+    num_primals(nlp)  # number of primal variables
+    num_duals(nlp)    # total number of dual variables
+    packZ(nlp, X, U)  # Stacks state `X` and controls `U` into one vector `Z`
+
+# Evaluating the NLP
+The NLP supports the following API for evaluating various pieces of the NLP:
+
+    eval_f(nlp, Z)         # evaluate the objective
+    grad_f!(nlp, grad, Z)  # gradient of the objective
+    hess_f!(nlp, hess, Z)  # Hessian of the objective
+    eval_c!(nlp, c, Z)     # evaluate the constraints
+    jac_c!(nlp, c, Z)      # constraint Jacobian
+"""
 struct NLP{n,m,L,Q}
-    model::L
-    obj::Vector{QuadraticCost{n,m,Float64}}
-    T::Int  # number of knot points
-    tf::Float64
-    x0::MVector{n,Float64}  # initial condition
-    xf::MVector{n,Float64}  # final condition
-    xinds::Vector{SVector{n,Int}}
-    uinds::Vector{SVector{m,Int}}
-    times::Vector{Float64}
+    model::L                                 # dynamics model
+    obj::Vector{QuadraticCost{n,m,Float64}}  # objective function
+    T::Int                                   # number of knot points
+    tf::Float64                              # total time (sec)
+    x0::MVector{n,Float64}                   # initial condition
+    xf::MVector{n,Float64}                   # final condition
+    xinds::Vector{SVector{n,Int}}            # Z[xinds[k]] gives states for time step k
+    uinds::Vector{SVector{m,Int}}            # Z[uinds[k]] gives controls for time step k
+    times::Vector{Float64}                   # vector of times
     function NLP(model::AbstractModel, obj::Vector{<:QuadraticCost{n,m}},
             tf::Real, T::Integer, x0::AbstractVector, xf::AbstractVector, integration::Type{<:QuadratureRule}=RK4
         ) where {n,m}
@@ -70,6 +118,11 @@ function packZ(nlp, X, U)
     return Z
 end
 
+"""
+    eval_f(nlp, Z)
+
+Evaluate the objective, returning a scalar.
+"""
 function eval_f(nlp::NLP, Z)
     J = 0.0
     xi,ui = nlp.xinds, nlp.uinds
@@ -81,6 +134,11 @@ function eval_f(nlp::NLP, Z)
     return J
 end
 
+"""
+    grad_f!(nlp, grad, Z)
+
+Evaluate the gradient of the objective at `Z`, storing the result in `grad`.
+"""
 function grad_f!(nlp::NLP{n,m}, grad, Z) where {n,m}
     xi,ui = nlp.xinds, nlp.uinds
     obj = nlp.obj
@@ -93,6 +151,12 @@ function grad_f!(nlp::NLP{n,m}, grad, Z) where {n,m}
     return nothing
 end
 
+"""
+    hess_f!(nlp, hess, Z)
+
+Evaluate the Hessian of the objective at `Z`, storing the result in `hess`.
+Should work with `hess` sparse.
+"""
 function hess_f!(nlp::NLP{n,m}, hess, Z, rezero=true) where {n,m}
     if rezero
         for i = 1:size(hess,1)
@@ -116,6 +180,15 @@ function hess_f!(nlp::NLP{n,m}, hess, Z, rezero=true) where {n,m}
     end
 end
 
+"""
+    eval_c!(nlp, c, Z)
+
+Evaluate the equality constraints at `Z`, storing the result in `c`.
+The constraints should be ordered as follows: 
+1. Initial condition ``x_1 = x_\\text{init}``
+2. Dynamics ``f(x_k,u_k) - x_{k+1} = 0``
+3. Terminal constraint ``x_T = x_\\text{goal}``
+"""
 function eval_c!(nlp::NLP{n,m,<:Any,Q}, c, Z) where {n,m,Q}
     T = nlp.T
     xi,ui = nlp.xinds, nlp.uinds
@@ -139,6 +212,11 @@ function eval_c!(nlp::NLP{n,m,<:Any,Q}, c, Z) where {n,m,Q}
     return nothing
 end
 
+"""
+    jac_c!(nlp, jac, Z)
+
+Evaluate the constraint Jacobian, storing the result in the (potentially sparse) matrix `jac`.
+"""
 function jac_c!(nlp::NLP{n,m,<:Any,Q}, jac, Z) where {n,m,Q}
     for i = 1:n
         jac[i,i] = 1
@@ -163,6 +241,11 @@ function jac_c!(nlp::NLP{n,m,<:Any,Q}, jac, Z) where {n,m,Q}
     end
 end
 
+"""
+    jvp!(nlp, jac, Z, λ)
+
+Evaluate the constraint Jacobian-transpose vector product ``\\nabla c^T \\lambda``, storing the result in the vector `jac`.
+"""
 function jvp!(nlp::NLP{n,m,<:Any,Q}, jac, Z, λ, rezero::Bool=true, tmp=zeros(n+m)) where {n,m,Q}
     for i = 1:n
         rezero && (jac[i] = 0)
@@ -194,6 +277,12 @@ function jvp!(nlp::NLP{n,m,<:Any,Q}, jac, Z, λ, rezero::Bool=true, tmp=zeros(n+
     end
 end
 
+"""
+    ∇jvp!(nlp, hess, Z, λ)
+
+Evaluate the Jacobian of the constraint Jacobian-transpose vector product, e.g. ``\\frac{\\partial}{\\partial z} \\nabla c^T \\lambda``,
+storing the result in the (potentially sparse) matrix `hess`.
+"""
 function ∇jvp!(nlp::NLP{n,m,<:Any,Q}, hess, Z, λ) where {n,m,Q}
     xi,ui = nlp.xinds, nlp.uinds
     idx = [xi[1]; ui[1]]
@@ -216,12 +305,22 @@ end
 ############################################################################################
 #                                 LAGRANGIAN
 ############################################################################################
+"""
+    lagrangian(nlp, Z, λ, c)
+
+Evaluate the Lagrangian at `Z` and `λ`. Calculates the constraints, storing the result in `c`.
+"""
 function lagrangian(nlp::NLP{n,m}, Z, λ, c=zeros(eltype(Z),length(λ))) where {n,m}
     J = eval_f(nlp, Z)
     eval_c!(nlp, c, Z)
     return J - dot(λ,c)
 end
 
+"""
+    grad_lagrangian(nlp, grad, Z, λ)
+
+Evaluate the gradient of the Lagrangian.
+"""
 function grad_lagrangian!(nlp::NLP{n,m}, grad, Z, λ, tmp=zeros(eltype(Z), n+m)) where {n,m}
     grad_f!(nlp, grad, Z)
     grad .*= -1
@@ -230,17 +329,32 @@ function grad_lagrangian!(nlp::NLP{n,m}, grad, Z, λ, tmp=zeros(eltype(Z), n+m))
     return nothing
 end
 
+"""
+    hess_lagrangian(nlp, grad, Z, λ)
+
+Evaluate the Hessian of the Lagrangian.
+"""
 function hess_lagrangian!(nlp::NLP{n,m}, hess, Z, λ) where {n,m}
     ∇jvp!(nlp, hess, Z, λ)
     hess .*= -1
     hess_f!(nlp, hess, Z, false)
 end
 
+"""
+    primal_residual(nlp, Z, λ, [g; p])
+
+Evaluate the `p`-norm of the primal residual (stationarity condition).
+"""
 function primal_residual(nlp::NLP, Z, λ, g=zeros(num_primals(nlp)); p=2)
     grad_lagrangian!(nlp, g, Z, λ)
     return norm(g, p)
 end
 
+"""
+    dual_residual(nlp, Z, λ, [c; p])
+
+Evaluate the `p`-norm of the dual residual (constraint violation).
+"""
 function dual_residual(nlp::NLP, Z, λ, c=zeros(num_eq(nlp)); p=2)
     eval_c!(nlp, c, Z)
     norm(c, p)

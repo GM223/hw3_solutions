@@ -1,4 +1,33 @@
 
+@doc raw"""
+    TOQP
+
+A type specifying a (T)rajectory (O)ptimization (Q)uadratic (P)rogram, of the form
+
+
+``\begin{aligned} &\text{minimize} &&\frac{1}{2} z^T Q z + q^T z \\ 
+&\text{subject to} && A z = b \\ 
+&&& l \leq C z \leq u \end{aligned}``
+
+where ``z = [x_1^T \; u_1^T \; \dots \; x_{T-1}^T \; u_{T-1}^T \; x_T^T]^T`` and 
+``x \in \mathbb{R}^n`` is the state vector and ``u \in \mathbb{R}^m`` is the control vector.
+
+# Constructors
+
+    TOQP(n,m,T,M,P)
+
+where `n` is the number of states, `m` is the number of controls, `T` is the horizon, `M` is the number of equality 
+constraints, and `P` is the number of inequality constraints.
+
+# Methods
+
+    num_ineq(qp)     # number of inequality constraints
+    num_eq(qp)       # number of equality constraints
+    num_primals(qp)  # number of primal variables
+    num_duals(qp)    # total number of dual variables
+
+
+"""
 struct TOQP
     Q::SparseMatrixCSC{Float64,Int}  # quadratic cost
     q::Vector{Float64}               # linear cost
@@ -37,8 +66,10 @@ num_duals(qp::TOQP) = num_ineq(qp) + num_eq(qp)
 
 
 """
-Build a QP from the NLP, optionally using either the Hessian of the cost function 
-or the Hessian of the Lagrangian.
+    build_qp!(qp, nlp, Z, λ; [gn=true])
+
+Build a QP from the NLP, evaluated at primal variables `Z` and dual variables `λ`, 
+optionally using either the Hessian of the cost function (`gn = true`) or the Hessian of the Lagrangian (`gn = false`).
 """
 function build_qp!(qp::TOQP, nlp::NLP, Z, λ; gn::Bool=true) 
     jac_c!(nlp, qp.A, Z)
@@ -52,4 +83,19 @@ function build_qp!(qp::TOQP, nlp::NLP, Z, λ; gn::Bool=true)
         hess_lagrangian!(nlp, qp.Q, Z, λ)
     end
     return nothing
+end
+
+"""
+    solve_qp!(qp, [reg])
+
+Solve the QP, optionally applying regularization `reg`.
+"""
+function solve_qp!(qp::TOQP, reg=0.0)
+    N,M = num_primals(qp), num_duals(qp)
+    K = [qp.Q + reg*I qp.A'; qp.A -reg*I]
+    t = [-qp.q; qp.b]
+    dY = K\t
+    dZ = dY[1:N]
+    dλ = dY[N+1:N+M]
+    return dZ, dλ
 end
