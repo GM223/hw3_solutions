@@ -37,7 +37,7 @@ function solve_sqp!(nlp, Z, λ;
         verbose > 0 && @printf("Iteration %d: cost = %0.2f, res_p = %0.2e, res_d = %0.2e,", iter, J, res_p, res_d)
 
         # Termination conditions
-        if res_p < eps_primal && res_d < eps_dual 
+        if res_p < eps_dual && res_d < eps_primal
             verbose > 0 && println()
             break
         end
@@ -63,6 +63,7 @@ function solve_sqp!(nlp, Z, λ;
         dphi0 = grad0'dZ - μ * norm(c0, 1)     # gradient of the merit function (Nocedal & Wright Theorem 18.2)
         phi = Inf
 
+        soc = false
         τ = 0.5
         η = 1e-2
         # verbose > 2 && @printf("\n   ϕ0: %0.2f, ϕ′: %0.2e, %0.2e\n", phi0, dphi0, dphi1)
