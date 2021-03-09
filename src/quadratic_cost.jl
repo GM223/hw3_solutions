@@ -50,3 +50,12 @@ function termcost(cost::QuadraticCost, x, u=nothing)
     Q,R,q,r,c = cost.Q, cost.R, cost.q, cost.r, cost.c
     return 0.5*x'Q*x + q'x + c 
 end
+
+function cost(obj::Vector{<:QuadraticCost{n,m,T}}, X, U) where {n,m,T}
+    J = zero(T)
+    for k = 1:length(U)
+        J += stagecost(obj[k], X[k], U[k])
+    end
+    J += termcost(obj[end], X[end])
+    return J
+end
