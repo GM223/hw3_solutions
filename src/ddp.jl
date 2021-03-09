@@ -20,41 +20,43 @@ function cost(obj::Vector{<:QuadraticCost{n,m,T}}, X, U) where {n,m,T}
     return J
 end
 
-function solve_ddp2(prob::Problem, xtraj, utraj;
+function solve_ddp(prob::Problem{n,m}, xtraj, utraj;
         iters=100,
+        ls_iters=10,
         reg_min=1e-6,
         verbose=0,
         eps=1e-5,
         eps_ddp=eps
-    )
+    ) where {n,m}
     t_start = time_ns()
     Nx,Nu,Nt = size(prob)
 
-    p = zeros(Nx,Nt)
-    P = zeros(Nx,Nx,Nt)
-    j = ones(Nu,Nt-1)
-    K = zeros(Nu,Nx,Nt-1)
+    T = prob.T
+    p = zeros(n,T)
+    P = zeros(n,n,T)
+    j = ones(m,T-1)
+    K = zeros(m,n,T-1)
     ΔJ = 0.0
 
-    Gxx = zeros(Nx,Nx)
-    Guu = zeros(Nu,Nu)
-    Gxu = zeros(Nx,Nu)
-    Gux = zeros(Nu,Nx)
+    Gxx = zeros(n,n)
+    Guu = zeros(m,m)
+    Gxu = zeros(n,m)
+    Gux = zeros(m,n)
+
+    xn = zeros(Nx,Nt)
+    un = zeros(Nu,Nt-1)
 
     ∇f = RobotDynamics.DynamicsJacobian(prob.model) 
     ∇jac = zeros(n+m,n+m) 
 
     J = cost(xtraj, utraj)
+    Jn = Inf
     iter = 0
     tol = 1.0
     β = 1e-6
     while tol > eps 
         iter += 1
         
-        p = zeros(Nx,Nt)
-        P = zeros(Nx,Nx,Nt)
-        j = zeros(Nu,Nt-1)
-        K = zeros(Nu,Nx,Nt-1)
         ΔJ = 0.0
 
         p[:,T] = obj[end].Q*xtraj[:,T] + obj[end].q
@@ -63,19 +65,18 @@ function solve_ddp2(prob::Problem, xtraj, utraj;
         #Backward Pass
         failed = false
         for k = (Nt-1):-1:1
-            #Calculate derivatives
+            # Cost Expansion
             q = obj[k].Q*xtraj[:,k] + obj[k].q
             Q = obj[k].Q
-        
             r = obj[k].R*utraj[:,k] + obj[k].r
             R = obj[k].R
 
+            # Dynamics derivatives
             dt = prob.times[k+1] - prob.times[k]
             z = KnotPoint(SVector{n}(xtraj[:,k]), SVector{m}(utraj[:,k]), dt, prob.times[k])
             discrete_jacobian!(RK4, ∇f, model, z)
-
-            A = ∇f.A
-            B = ∇f.B
+            A = RobotDynamics.get_static_A(∇f)
+            B = RobotDynamics.get_static_B(∇f)
         
             gx = q + A'*p[:,k+1]
             gu = r + B'*p[:,k+1]
@@ -115,33 +116,46 @@ function solve_ddp2(prob::Problem, xtraj, utraj;
         end
         #display(j)
 
-        #Forward rollout with line search
         if failed
             continue
         end
 
-        xn = zeros(Nx,Nt)
-        un = zeros(Nu,Nt-1)
+        # Forward rollout with line search
         xn[:,1] = xtraj[:,1]
         α = 1.0
 
-        for k = 1:(Nt-1)
-            un[:,k] .= utraj[:,k] - α*j[:,k] - K[:,:,k]*(xn[:,k]-xtraj[:,k])
-            xn[:,k+1] .= quad_dynamics_rk4(xn[:,k],un[:,k])
-        end
-        Jn = cost(xn,un)
-        
-        while Jn > (J - 1e-2*α*ΔJ)
-            α = 0.5*α
+        for i = 1:ls_iters
             for k = 1:(Nt-1)
+                t = prob.times[k]
+                dt = prob.times[k+1] - prob.times[k]
                 un[:,k] .= utraj[:,k] - α*j[:,k] - K[:,:,k]*(xn[:,k]-xtraj[:,k])
-                xn[:,k+1] .= quad_dynamics_rk4(xn[:,k],un[:,k])
+                # xn[:,k+1] .= quad_dynamics_rk4(xn[:,k],un[:,k])
+                xn[:,k+1] = discrete_dynamics(RK4, model, SVector{n}(xn[:,k]), SVector{m}(un[:,k]), t, dt) 
             end
             Jn = cost(xn,un)
+            if Jn <= J - 1e-2*α*ΔJ
+                break
+            else
+                α *= 0.5
+            end
+            if i == ls_iters
+                @warn "Line Search failed"
+                α = 0
+            end
         end
+        # Jn = cost(xn,un)
+        
+        # while Jn > (J - 1e-2*α*ΔJ)
+        #     α = 0.5*α
+        #     for k = 1:(Nt-1)
+        #         un[:,k] .= utraj[:,k] - α*j[:,k] - K[:,:,k]*(xn[:,k]-xtraj[:,k])
+        #         xn[:,k+1] .= quad_dynamics_rk4(xn[:,k],un[:,k])
+        #     end
+        #     Jn = cost(xn,un)
+        # end
         #display(α)
         
-        J = Jn
+        # J = Jn
         xtraj .= xn
         utraj .= un
         
@@ -153,179 +167,18 @@ function solve_ddp2(prob::Problem, xtraj, utraj;
                 iter, J, Jn, J-Jn, norm(j, Inf), β
             )
         end
+        J = Jn
+
+        if iter >= iters
+            @warn "Reached max iterations"
+            break
+        end
 
     end
     println("Total Time: ", (time_ns() - t_start)*1e-6, " ms")
     return xtraj, utraj
 end
 
-function solve_ddp(prob::Problem{n,m}, xtraj, utraj;
-        iters=100,
-        ddp=true,
-        reg_min=1e-6,
-        verbose=0,
-    ) where {n,m}
-
-    t_start = time_ns()
-
-    Nx,Nu,Nt = size(prob) 
-    obj = prob.obj
-    T = prob.T
-    # x0 = [-2.0; 1.0; 0; 0; 0; 0]
-    # xgoal = [2.0; 1.0; 0; 0; 0; 0]
-
-    # xtraj = kron(ones(1,Nt), x0)
-    # utraj = kron(ones(1,Nt-1), uhover)
-    J = cost(xtraj,utraj)
-
-    verbose = 1
-    p = zeros(Nx,Nt)
-    P = zeros(Nx,Nx,Nt)
-    j = ones(Nu,Nt-1)
-    K = zeros(Nu,Nx,Nt-1)
-    ΔJ = 0.0
-
-    Gxx = zeros(Nx,Nx)
-    Guu = zeros(Nu,Nu)
-    Gxu = zeros(Nx,Nu)
-    Gux = zeros(Nu,Nx)
-    
-    ∇f = RobotDynamics.DynamicsJacobian(prob.model) 
-    ∇jac = zeros(n+m,n+m) 
-
-    β = 1e-6
-    iter = 0
-    tol = Inf 
-    ρ = reg_min 
-    while tol > 1e-8 
-        iter += 1
-        
-        p = zeros(Nx,Nt)
-        P = zeros(Nx,Nx,Nt)
-        j = zeros(Nu,Nt-1)
-        K = zeros(Nu,Nx,Nt-1)
-        ΔJ = 0.0
-
-        # p[:,Nt] = ForwardDiff.gradient(terminal_cost,xtraj[:,Nt])
-        # P[:,:,Nt] = ForwardDiff.hessian(terminal_cost,xtraj[:,Nt])
-        p[:,T] = obj[end].Q*xtraj[:,T] + obj[end].q
-        P[:,:,T] = obj[end].Q
-        
-        #Backward Pass
-        failed = false
-        for k = (Nt-1):-1:1
-            #Calculate derivatives
-            # q = ForwardDiff.gradient(dx->stage_cost(dx,utraj[:,k],k),xtraj[:,k])
-            # Q = ForwardDiff.hessian(dx->stage_cost(dx,utraj[:,k],k),xtraj[:,k])
-            q = obj[k].Q*xtraj[:,k] + obj[k].q
-            Q = obj[k].Q
-        
-            # r = ForwardDiff.gradient(du->stage_cost(xtraj[:,k],du,k),utraj[:,k])
-            # R = ForwardDiff.hessian(du->stage_cost(xtraj[:,k],du,k),utraj[:,k])
-            r = obj[k].R*utraj[:,k] + obj[k].r
-            R = obj[k].R
-
-            dt = prob.times[k+1] - prob.times[k]
-            z = KnotPoint(SVector{n}(xtraj[:,k]), SVector{m}(utraj[:,k]), dt, prob.times[k])
-            discrete_jacobian!(RK4, ∇f, model, z)
-
-            # A = dfdx(xtraj[:,k],utraj[:,k])
-            # B = dfdu(xtraj[:,k],utraj[:,k])
-            A = ∇f.A
-            B = ∇f.B
-        
-            gx = q + A'*p[:,k+1]
-            gu = r + B'*p[:,k+1]
-        
-            Gxx = Q + A'*P[:,:,k+1]*A
-            Guu = R + B'*P[:,:,k+1]*B
-            Gxu = A'*P[:,:,k+1]*B
-            Gux = B'*P[:,:,k+1]*A
-
-            if ddp
-
-                # Ax = dAdx(xtraj[:,k],utraj[:,k])
-                # Bx = dBdx(xtraj[:,k],utraj[:,k])
-                # Au = dAdu(xtraj[:,k],utraj[:,k])
-                # Bu = dBdu(xtraj[:,k],utraj[:,k])
-
-                RobotDynamics.∇discrete_jacobian!(RK4, ∇jac, model, z, p[:,k+1])
-                Gxx .+= ∇jac[1:n, 1:n]
-                Guu .+= ∇jac[n+1:end, n+1:end]
-                Gux .+= ∇jac[n+1:end, 1:n]
-                Gxu .+= ∇jac[1:n, n+1:end]
-        
-                # Gxx .+= kron(p[:,k+1]',I(Nx))*comm(Nx,Nx)*Ax
-                # Guu .+= kron(p[:,k+1]',I(Nu))*comm(Nx,Nu)*Bu
-                # Gxu .+= kron(p[:,k+1]',I(Nx))*comm(Nx,Nx)*Au
-                # Gux .+= kron(p[:,k+1]',I(Nu))*comm(Nx,Nu)*Bx
-            end
-        
-            #Regularization
-            Gxx_reg = Gxx + A'*β*I*A
-            Guu_reg = Guu + B'*β*I*B
-            Gux_reg = Gux + B'*β*I*A
-            C = cholesky(Symmetric([Gxx_reg Gux_reg'; Gux_reg Guu_reg]), check=false)
-            if !issuccess(C)
-                β = 2*β
-                failed = true
-                display(β)
-                break
-            end
-
-            j[:,k] .= Guu_reg\gu
-            K[:,:,k] .= Guu_reg\Gux_reg
-        
-            p[:,k] .= gx - K[:,:,k]'*gu + K[:,:,k]'*Guu*j[:,k] - Gxu*j[:,k]
-            P[:,:,k] .= Gxx + K[:,:,k]'*Guu*K[:,:,k] - Gxu*K[:,:,k] - K[:,:,k]'*Gux
-        
-            ΔJ += gu'*j[:,k]
-        end
-        # display(j)
-
-        #Forward rollout with line search
-        # if failed
-        #     continue
-        # end
-
-        xn = zeros(Nx,Nt)
-        un = zeros(Nu,Nt-1)
-        xn[:,1] = xtraj[:,1]
-        α = 1.0
-
-        for k = 1:(Nt-1)
-            un[:,k] .= utraj[:,k] - α*j[:,k] - K[:,:,k]*(xn[:,k]-xtraj[:,k])
-            xn[:,k+1] .= quad_dynamics_rk4(xn[:,k],un[:,k])
-        end
-        Jn = cost(xn,un)
-        
-        while Jn > (J - 1e-2*α*ΔJ)
-            α = 0.5*α
-            for k = 1:(Nt-1)
-                un[:,k] .= utraj[:,k] - α*j[:,k] - K[:,:,k]*(xn[:,k]-xtraj[:,k])
-                xn[:,k+1] .= quad_dynamics_rk4(xn[:,k],un[:,k])
-            end
-            Jn = cost(xn,un)
-        end
-        # display(α)
-
-        if verbose > 0
-            @printf("Iter: %3d, Cost: % 6.2f → % 6.2f (% 7.2e), res: % .2e\n",
-                iter, J, Jn, J-Jn, norm(j, Inf)
-            )
-        end
-        
-        J = Jn
-        xtraj .= xn
-        utraj .= un
-
-        tol = norm(j, Inf)
-        β = max(0.9*β, 1e-6)
-
-    end
-    println("Total Time: ", (time_ns() - t_start)*1e-6, " ms")
-end
-    
 
 # Cost functions
 function stage_cost(x,u,k)
