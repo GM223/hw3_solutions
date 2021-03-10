@@ -49,3 +49,9 @@ function visualize!(vis, model::AbstractModel, tf::Real, X)
     end
     setanimation!(vis, anim)
 end
+
+function RobotDynamics.discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel,
+        x, u, t, dt) where {Q<:RobotDynamics.Explicit}
+    z = KnotPoint(x, u, dt, t)
+    RobotDynamics.discrete_jacobian!(Q, ∇f, model, z)
+end

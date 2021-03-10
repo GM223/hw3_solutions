@@ -1,23 +1,47 @@
 using Printf
 
+"""
+    Problem{n,m,L}
+
+Describes a trajectory optimization problem with `n` states, `m` controls, and 
+a model of type `L`. 
+
+# Constructor
+    Problem(model::L, obj::Vector{<:QuadraticCost{n,m}}, tf, x0, xf) where {n,m,L}
+
+where `tf` is the final time, and `x0` is the initial state. 
+"""
 struct Problem{n,m,L}
     model::L
     obj::Vector{QuadraticCost{n,m,Float64}}
     T::Int
     tf::Float64
     x0::MVector{n,Float64}
-    xf::MVector{n,Float64}
     times::Vector{Float64}
+    function Problem(model::L, obj::Vector{<:QuadraticCost{n,m}}, tf, x0) where {n,m,L}
+        @assert length(x0) == n == length(obj[1].q) == state_dim(model)
+        @assert length(obj[1].r) == m == control_dim(model)
+        T = length(obj)
+        times = range(0, tf, length=T)
+        new{n,m,L}(model, obj, T, tf, x0, times)
+    end
 end
 Base.size(prob::Problem{n,m}) where {n,m} = (n,m,prob.T)
 
-function solve_ddp(prob::Problem{n,m}, X, U; 
-        iters=100,
-        ls_iters=10,
-        reg_min=1e-6,
-        verbose=0,
-        eps=1e-5,
-        eps_ddp=eps
+"""
+    solve_ilqr(prob, X, U; kwargs...)
+
+Solve the trajectory optimization problem specified by `prob` using iterative LQR.
+Returns the optimized state and control trajectories, as well as the local control gains,
+`K` and `d`.
+"""
+function solve_ilqr(prob::Problem{n,m}, X0, U0; 
+        iters=100,     # max iterations
+        ls_iters=10,   # max line search iterations
+        reg_min=1e-6,  # minimum regularizatio for the backwardpass
+        verbose=0,     # print verbosity
+        eps=1e-5,      # termination tolerance
+        eps_ddp=eps    # tolerance to switch to ddp
     ) where {n,m}
     t_start = time_ns()
     Nx,Nu,Nt = size(prob)
@@ -28,6 +52,9 @@ function solve_ddp(prob::Problem{n,m}, X, U;
     d = [zeros(m) for k = 1:T-1]    # feedforward gains
     K = [zeros(m,n) for k = 1:T-1]  # feedback gains
     ΔJ = 0.0
+
+    X = deepcopy(X0)
+    U = deepcopy(U0)
 
     Xbar = [@SVector zeros(n) for k = 1:T]
     Ubar = [@SVector zeros(m) for k = 1:T-1]
@@ -68,9 +95,15 @@ function solve_ddp(prob::Problem{n,m}, X, U;
 
     end
     println("Total Time: ", (time_ns() - t_start)*1e-6, " ms")
-    return X,U 
+    return X,U,K,d
 end
 
+"""
+    backwardpass!(prob, P, p, K, d, X, U)
+
+Evaluate the iLQR backward pass at state and control trajectories `X` and `U`, 
+storing the cost-to-go expansion in `P` and `p` and the gains in `K` and `d`.
+"""
 function backwardpass!(prob::Problem{n,m}, P, p, K, d, X, U; 
         β=1e-6, ddp::Bool=false
     ) where {n,m}
@@ -137,7 +170,15 @@ function backwardpass!(prob::Problem{n,m}, P, p, K, d, X, U;
     return ΔJ, failed
 end
 
-function forwardpass!(prob::Problem{n,m}, X, U, Xbar, Ubar, K, d, ΔJ, J; 
+"""
+    forwardpass!(prob, X, U, K, d, ΔJ, J)
+
+Evaluate the iLQR forward pass at state and control trajectories `X` and `U`, using
+the gains `K` and `d` to simulate the system forward. The new cost should be less than 
+the current cost `J` together with the expected cost decrease `ΔJ`.
+"""
+function forwardpass!(prob::Problem{n,m}, X, U, K, d, ΔJ, J,
+        Xbar = deepcopy(X), Ubar = deepcopy(U);
         max_iters=10,
     ) where {n,m}
     T = prob.T
