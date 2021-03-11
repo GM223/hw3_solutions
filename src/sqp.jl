@@ -6,20 +6,30 @@ using Printf
 Solve the trajectory optimization problem specified by `nlp` using Sequential Quadratic Programming, given the initial 
 guess for the primal variables `Z` and `λ`.
 """
-function solve_sqp!(nlp, Z, λ;
+# TASK: Complete the SQP method
+"""
+    solve_sqp!(nlp, Z, λ; kwargs...)
+
+Solve the trajectory optimization problem specified by `nlp` using Sequential Quadratic Programming, given the initial 
+guess for the primal variables `Z` and `λ`.
+"""
+function solve_sqp!(nlp, Z0, λ0;
         iters=100,                   # max number of iterations
         verbose=0,                   # verbosity level
         eps_primal=1e-6,             # primal feasibility tolerance
-        eps_dual=1e-6,               # dual feasibility tolerance
+        eps_dual=1e-4,               # dual feasibility tolerance
         eps_fn=sqrt(eps_primal),     # 
         gn::Bool=true,               # use Gauss-Newton approximation
         enable_soc::Bool=true,       # enable Second-Order-Corrections during the line search
         ls_iters=10,                 # max number of line search iterations
         reg_min=1e-6,                # minimum regularization
     )
+    t_start = time_ns()
 
     # Initialize solution
-    qp = TOQP(size(nlp)..., num_eq(nlp), 0)
+    Z = deepcopy(Z0)
+    λ = deepcopy(λ0)
+    qp = TOQP(nlp)
 
     # Line Search parameters
     μ = 10.0
@@ -28,12 +38,21 @@ function solve_sqp!(nlp, Z, λ;
     Z̄ = zero(Z)
     dZ = zero(Z)
     reg = reg_min 
+    
+    stats = Dict(
+        :cost => Float64[],
+        :viol_primal => Float64[],  # constraint violation
+        :viol_dual => Float64[],    # stationarity
+        :time => Float64[]
+    )
 
     for iter = 1:iters
         ## Check the residuals and cost
         res_p = primal_residual(nlp, Z, λ)
         res_d = dual_residual(nlp, Z, λ)
         J = eval_f(nlp, Z)
+        push!(stats[:viol_primal], res_d)
+        push!(stats[:viol_dual], res_p)
         verbose > 0 && @printf("Iteration %d: cost = %0.2f, res_p = %0.2e, res_d = %0.2e,", iter, J, res_p, res_d)
 
         # Termination conditions
@@ -62,6 +81,8 @@ function solve_sqp!(nlp, Z, λ;
         phi0 = J0 + μ * norm(c0, 1)            # merit function
         dphi0 = grad0'dZ - μ * norm(c0, 1)     # gradient of the merit function (Nocedal & Wright Theorem 18.2)
         phi = Inf
+        
+        push!(stats[:cost], J0)
 
         soc = false
         τ = 0.5
@@ -110,9 +131,13 @@ function solve_sqp!(nlp, Z, λ;
         # Output
         verbose > 0 && @printf("   α = %0.2f, ΔJ: %0.2e, Δϕ: %0.2e, reg: %0.2e, pen: %d, soc: %d\n", 
             α, J - eval_f(nlp, Z), phi0 - phi, reg, μ, soc)
-    end 
-    return Z, λ, qp 
+        push!(stats[:time], (time_ns() - t_start) / 1e6)  # ms
+    end
+    push!(stats[:time], (time_ns() - t_start) / 1e6)  # ms
+    push!(stats[:cost], eval_f(nlp, Z))
+    return Z, λ, stats 
 end
+
 
 """
     minimum_penalty(Q,q,c, dZ; ρ)

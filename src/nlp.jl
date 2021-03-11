@@ -43,8 +43,9 @@ struct NLP{n,m,L,Q}
     function NLP(model::AbstractModel, obj::Vector{<:QuadraticCost{n,m}},
             tf::Real, T::Integer, x0::AbstractVector, xf::AbstractVector, integration::Type{<:QuadratureRule}=RK4
         ) where {n,m}
+        mT = integration <: RobotDynamics.Explicit ? T-1 : T 
         xinds = [SVector{n}((k-1)*(n+m) .+ (1:n)) for k = 1:T]
-        uinds = [SVector{m}((k-1)*(n+m) .+ (n+1:n+m)) for k = 1:T-1]
+        uinds = [SVector{m}((k-1)*(n+m) .+ (n+1:n+m)) for k = 1:mT]
         times = collect(range(0, tf, length=T))
         new{n,m,typeof(model), integration}(
             model, obj,
@@ -53,10 +54,12 @@ struct NLP{n,m,L,Q}
     end
 end
 Base.size(nlp::NLP{n,m}) where {n,m} = (n,m,nlp.T)
-num_primals(nlp::NLP{n,m}) where {n,m} = n*nlp.T + m*(nlp.T-1)
+num_primals(nlp::NLP{n,m}) where {n,m} = n*nlp.T + m*num_controls(nlp)
 num_duals(nlp::NLP) = num_eq(nlp) + num_ineq(nlp)
 num_eq(nlp::NLP{n,m}) where {n,m} = n*nlp.T + n
 num_ineq(nlp::NLP) = 0
+ishs(nlp::NLP{<:Any,<:Any,<:Any,Q}) where Q = Q == HermiteSimpson
+num_controls(nlp::NLP) = ishs(nlp) ? nlp.T : nlp.T - 1
 
 """
     packZ(nlp, X, U)
@@ -65,11 +68,11 @@ Take a vector state vectors `X` and controls `U` and stack them into a single ve
 """
 function packZ(nlp, X, U)
     Z = zeros(num_primals(nlp))
-    for k = 1:nlp.T-1
+    for k = 1: num_controls(nlp)
         Z[nlp.xinds[k]] = X[k]
         Z[nlp.uinds[k]] = U[k]
     end
-    Z[nlp.xinds[end]] = X[end]
+    ishs(nlp) || (Z[nlp.xinds[end]] = X[end])
     return Z
 end
 
@@ -170,7 +173,12 @@ function eval_c!(nlp::NLP{n,m,<:Any,Q}, c, Z) where {n,m,Q}
         x,u = Z[xi[k]], Z[ui[k]]
         x⁺ = Z[xi[k+1]]
         dt = nlp.times[k+1] - nlp.times[k]
-        c[idx] = discrete_dynamics(Q, nlp.model, x, u, nlp.times[k], dt) - x⁺
+        if ishs(nlp) 
+            u⁺ = Z[ui[k+1]]
+            c[idx] = hermite_simpson(nlp.model, x, u, x⁺, u⁺, dt)
+        else
+            c[idx] = discrete_dynamics(Q, nlp.model, x, u, nlp.times[k], dt) - x⁺
+        end
     end
 
     # terminal constraint
@@ -179,12 +187,15 @@ function eval_c!(nlp::NLP{n,m,<:Any,Q}, c, Z) where {n,m,Q}
     return nothing
 end
 
+
 """
     jac_c!(nlp, jac, Z)
 
 Evaluate the constraint Jacobian, storing the result in the (potentially sparse) matrix `jac`.
 """
 function jac_c!(nlp::NLP{n,m,<:Any,Q}, jac, Z) where {n,m,Q}
+    # TODO: Initial condition
+    # SOLUTION
     for i = 1:n
         jac[i,i] = 1
     end
@@ -194,15 +205,34 @@ function jac_c!(nlp::NLP{n,m,<:Any,Q}, jac, Z) where {n,m,Q}
     for k = 1:nlp.T-1
         idx = idx .+ n 
         zi = [xi[k];ui[k]]
+        zi2 = k < T-1 || ishs(nlp) ? zi .+ (n+m) : xi[T]
+        x = Z[xi[k]]
+        u = Z[ui[k]]
+        t = nlp.times[k]
         dt = nlp.times[k+1] - nlp.times[k]
-        z = StaticKnotPoint(Z[zi], xi[1], ui[1], dt, nlp.times[k])
-        J = view(jac,idx,zi)
-        discrete_jacobian!(Q, J, nlp.model, z, nothing)
-        for i = 1:n
-            jac[idx[i], zi[end]+i] = -1
+
+        ∇f = view(jac, idx, zi)
+        ∇f2 = view(jac, idx, zi2)
+        
+        # TODO: Dynamics constraint
+        if Q == HermiteSimpson
+            x2,u2 = Z[xi[k+1]], Z[ui[k+1]]
+            i1 = [xi[1]; ui[1]]
+            i2 = [xi[2]; ui[2]]
+            ∇f12 = hs_jacobian(model, x, u, x2, u2, dt)
+            ∇f .= ∇f12[xi[1],i1]
+            ∇f2 .= ∇f12[xi[1],i2]
+        else
+            discrete_jacobian!(Q, ∇f, nlp.model, x, u, t, dt)
+            for i = 1:n
+                ∇f2[i,i] = -1
+            end
         end
     end
     idx = idx .+ n 
+    
+    # TODO: Terminal constraint
+    # SOLUTION
     for i = 1:n
         jac[idx[i], xi[end][i]] = 1
     end
@@ -254,19 +284,38 @@ function ∇jvp!(nlp::NLP{n,m,<:Any,Q}, hess, Z, λ) where {n,m,Q}
     xi,ui = nlp.xinds, nlp.uinds
     idx = [xi[1]; ui[1]]
     idx2 = xi[1]
+    
+    # TODO: Initial Constraint
+    ishs(nlp) && (hess .= 0)
+    
+    # Dynamics constraints
     for k = 1:nlp.T-1
         idx2 = idx2 .+ n
-        zi = [xi[k];ui[k]]
+        zi2 = k < T-1 ? idx .+ (n+m) : xi[T]
+        x = Z[xi[k]]
+        u = Z[ui[k]]
+        λk = λ[idx2]
+        t = nlp.times[k]
         dt = nlp.times[k+1] - nlp.times[k]
-        z = StaticKnotPoint(Z[zi], xi[1], ui[1], dt, nlp.times[k])
-        λ_ = λ[idx2]
+        
         ∇f = view(hess, idx, idx)
-        RobotDynamics.∇discrete_jacobian!(Q, ∇f, nlp.model, z, λ_)
+        ∇f2 = view(hess, idx, zi2)
+        
+        # TODO: Calculate second derivative the dynamics
+        # SOLUTION
+        if ishs(nlp)
+            ib = [idx; idx .+ (n+m)]
+            ∇f = view(hess, ib, ib)
+            x2,u2 = Z[xi[k+1]], Z[ui[k+1]]
+            ∇f .+= hs_∇jvp(nlp.model, x, u, x2, u2, λk, dt)
+        else
+            ∇discrete_jacobian!(Q, ∇f, nlp.model, x, u, t, dt, λk)
+        end
+        
+        # Advance indices
         idx = idx .+ (n + m)
     end
-    for i = 1:n
-        hess[end-i+1,end-i+1] = 0
-    end
+    # TODO: Terminal constraint
 end
 
 ############################################################################################
@@ -289,6 +338,12 @@ end
 Evaluate the gradient of the Lagrangian.
 """
 function grad_lagrangian!(nlp::NLP{n,m}, grad, Z, λ, tmp=zeros(eltype(Z), n+m)) where {n,m}
+    jac = spzeros(length(λ), length(Z))
+    jac_c!(nlp, jac, Z)
+    grad_f!(nlp, grad, Z)
+    grad .-= jac'λ
+    return nothing
+
     grad_f!(nlp, grad, Z)
     grad .*= -1
     jvp!(nlp, grad, Z, λ, false, tmp)

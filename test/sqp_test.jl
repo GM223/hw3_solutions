@@ -9,6 +9,7 @@ using StaticArrays
 using SparseArrays
 using BlockArrays
 
+include("../src/quadratic_cost.jl")
 include("../src/nlp.jl")
 include("../src/qp.jl")
 include("../src/sqp.jl")

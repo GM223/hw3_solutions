@@ -39,9 +39,10 @@ struct TOQP
     n::Int
     m::Int
     T::Int
+    mT::Int
 
-    function TOQP(n,m,T,M,P)
-        N = n*T + (T-1)*m
+    function TOQP(n,m,T,M,P,mT=T-1)
+        N = n*T + mT*m
         Q = spzeros(N,N)
         q = zeros(N)
         A = spzeros(M,N)
@@ -56,7 +57,7 @@ end
 
 
 function TOQP(nlp::NLP{n,m}) where {n,m}
-    TOQP(n,m,nlp.T, num_eq(nlp), num_ineq(nlp))
+    TOQP(n,m,nlp.T, num_eq(nlp), num_ineq(nlp), num_controls(nlp))
 end
 
 num_ineq(qp::TOQP) = length(qp.l)
