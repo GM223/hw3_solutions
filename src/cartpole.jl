@@ -87,3 +87,7 @@ struct NullController{m}
 end
 NullController(model::AbstractModel) = NullController(control_dim(model))
 get_control(ctrl::NullController{m}, x, t) where m = @SVector zeros(m)
+
+function run_tests()
+    include(joinpath(@__DIR__,"..","test","q2.jl"))
+end

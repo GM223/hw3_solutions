@@ -40,8 +40,6 @@ Z = packZ(nlp, X, U)
 dZ1, dZ2 = solve_sqp!(nlp, Z, λ, verbose=1, iters=200, gn=true, eps_primal=1e-4)
 norm(dZ1,Inf)
 norm(dZ2,Inf)
-dZ1
-dZ2
 
 
 ## Visualizer
