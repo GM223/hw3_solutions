@@ -60,3 +60,30 @@ function ∇discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel, x, u, t, d
     z = KnotPoint(x, u, dt, t)
     RobotDynamics.∇discrete_jacobian!(Q, ∇f, model, z, b)
 end
+
+
+function simulate(model::AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
+    n,m = size(model)
+    times = range(0, tf, step=dt)
+    N = length(times)
+    X = [@SVector zeros(n) for k = 1:N] 
+    U = [@SVector zeros(m) for k = 1:N-1]
+    X[1] = x0
+
+    tstart = time_ns()
+
+    for k = 1:N-1
+        U[k] = get_control(ctrl, X[k], times[k]) + w*@SVector randn(m)
+        X[k+1] = discrete_dynamics(RK4, model, X[k], U[k], times[k], dt)
+    end
+    tend = time_ns()
+    rate = N / (tend - tstart) * 1e9
+    println("Controller ran at $rate Hz")
+    return X,U,times
+end
+
+struct NullController{m} 
+    NullController(m::Integer) = new{Int(m)}()
+end
+NullController(model::AbstractModel) = NullController(control_dim(model))
+get_control(ctrl::NullController{m}, x, t) where m = @SVector zeros(m)
