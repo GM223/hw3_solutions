@@ -114,3 +114,7 @@ function simulate(quad::PlanarQuadrotor, x0, ctrl; tf=1.5, dt=0.025, kwargs...)
     println("Controller ran at $rate Hz")
     return X,U,times
 end
+
+function run_tests()
+    include(joinpath(@__DIR__,"..","test","q1.jl"))
+end

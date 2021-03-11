@@ -55,7 +55,7 @@ end
 
 @testset "SQP Solve" begin
 # solving the problem 
-Ztest, λtest, stats_test = solve_sqp!(nlp, Z, λ)
+Ztest, λtest, stats_test = solve_sqp(nlp, Z, λ)
 @test primal_residual(nlp, Ztest, λtest) < 1e-3
 @test dual_residual(nlp, Ztest, λ) < 1e-6
 @test Ztest[1:n] ≈ zeros(n) atol=1e-5
