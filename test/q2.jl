@@ -15,13 +15,14 @@ function convergence_rate(v::AbstractVector{T}) where T
     return r
 end
 
-@testset "Q1" begin
-@testset "Build QP" begin
-# test build_qp
+@testset "Q2" begin
 qp = TOQP(nlp)
 Zrand = randn(num_primals(nlp))
 λrand = randn(num_duals(nlp))
 Xrand,Urand = unpackZ(nlp, Zrand)
+
+@testset "Build QP" begin
+# test build_qp
 Ftest = RobotDynamics.DynamicsJacobian(model) 
 discrete_jacobian!(RK4, Ftest, model, Xrand[1], Urand[1], 0.0, dt)
 
@@ -78,7 +79,7 @@ end
 @testset "TVLQR tracking" begin
 # TVLQR 
 @test tsim[end] >= 2*tf
-@test Xsim[end][2] ≈ pi atol=1e-2
+@test Xsim[end][2] ≈ pi atol=1e-1
 @test Xsim[end][3:4] ≈ zeros(2) atol=1e-1
 end
 

@@ -1,43 +1,4 @@
-# import Pkg; Pkg.activate(joinpath(@__DIR__,"..")); 
-# # using hw3
-# using ForwardDiff
-# using Test
-# using RobotZoo
-# using RobotDynamics
-# using LinearAlgebra
-# using StaticArrays
-# using SparseArrays
-# using BlockArrays
-
-
-# ## Set up problem
-# model = RobotZoo.Cartpole()
-# n,m = size(model)
-# Q = Diagonal(fill(1e-3,n))
-# R = Diagonal(fill(1e-1,m))
-# Qf = Diagonal(fill(1e3,n))
-
-# x0 = @SVector zeros(n)
-# xf = SA[0,pi,0,0]
-# T = 101
-# tf = 2.0
-# dt = tf / (T-1)
-
-# costfun = LQRCost(Q,R,xf)
-# costterm = LQRCost(Qf,R,xf)
-# obj = push!(fill(costfun,T-1), costterm)
-
-# X = [x0 + (xf - x0)*t for t in range(0,1, length=T)]
-# U = [@SVector zeros(m) for k = 1:T-1]
-
-# @test stagecost(costfun, X[1], U[1]) ≈ 0.5*(X[1]-xf)'Q*(X[1]-xf) + 0.5*U[1]'R*U[1]
-# @test termcost(costterm, X[T]) ≈ 0.0
-# @test termcost(costterm, X[1]) ≈ 0.5*(X[1]-xf)'Qf*(X[1]-xf)
-
-
-# ## NLP
-# nlp = NLP(model, obj, tf, T, x0, xf)
-# Z = packZ(nlp, X, U)
+using BlockArrays
 
 # test cost
 function test_nlp(nlp, Z, λ; full_newton=false)
