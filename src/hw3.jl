@@ -8,6 +8,4 @@ function studentinfo()
     return info
 end
 
-include("nlp.jl")
-
 end # module
