@@ -40,7 +40,7 @@
 # Z = packZ(nlp, X, U)
 
 # test cost
-function test_nlp(nlp::NLP, Z, λ; extra_methods=false)
+function test_nlp(nlp, Z, λ; full_newton=false)
 costfun = nlp.obj[1]
 costterm = nlp.obj[end]
 X,U = unpackZ(nlp, Z)
@@ -107,12 +107,10 @@ end
     grad_lagrangian!(nlp, gradL, Z, λ)
     @test gradL ≈ grad - jac'λ atol=1e-6
 
-    # jvp
-    λ = rand(length(c))
-    jacvec = zero(Z)
-    jvp!(nlp, jacvec, Z, λ)
-    @test jacvec ≈ jac'λ
+end
 
+if full_newton
+@testset "Full Newton" begin
     # ∇jvp
     cvp(x) = begin
         c = zeros(eltype(x), length(λ))
@@ -126,8 +124,10 @@ end
     ∇jac = zero(hess) 
     ∇jvp!(nlp, ∇jac, Z, λ)
     @test ∇jac ≈ ∇jac0
-
+    
 end
+end
+
 end
 
 end

@@ -55,3 +55,8 @@ function RobotDynamics.discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel,
     z = KnotPoint(x, u, dt, t)
     RobotDynamics.discrete_jacobian!(Q, ∇f, model, z)
 end
+
+function ∇discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel, x, u, t, dt, b) where {Q<:RobotDynamics.Explicit}
+    z = KnotPoint(x, u, dt, t)
+    RobotDynamics.∇discrete_jacobian!(Q, ∇f, model, z, b)
+end
