@@ -18,6 +18,13 @@ function get_objective(prob::CartpoleProblem)
     return obj
 end
 
+"""
+    get_initial_trajectory(prob)
+
+Return the initial state and control trajectories for the cartpole. 
+The state trajectory rotates the pendulum from 0 to pi with constant 
+velocity, and the cart remains still.
+"""
 function get_initial_trajectory(prob::CartpoleProblem)
     tf = prob.tf
     x0 = prob.x0

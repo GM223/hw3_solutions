@@ -23,8 +23,6 @@ function eval_c!(nlp::NLP{n,m}, c, Z) where {n,m}
     # dynamics
     evaluate_dynamics!(nlp, Z)
     evaluate_midpoints!(nlp, Z)
-    # evaluate_dynamics_jacobians!(nlp, Z)
-    # evaluate_midpoint_jacobians!(nlp, Z)
     for k = 1:N-1
         idx = idx .+ n
         x1,x2 = Z[xi[k]], Z[xi[k+1]]

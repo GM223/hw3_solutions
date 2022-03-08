@@ -32,19 +32,21 @@ function eval_f(nlp::NLP, Z)
     J = 0.0
     
     # SOLUTION
+    Jstage = nlp.obj[1]
+    Jterm = nlp.obj[end]
     ix,iu = nlp.xinds, nlp.uinds
     evaluate_dynamics!(nlp, Z)
     evaluate_midpoints!(nlp, Z)
     J1 = 0.0
     let k = 1
         x1,u1 = Z[ix[k]], Z[iu[k]]
-        J1 = stagecost(nlp.obj[k], x1, u1)
+        J1 = stagecost(Jstage, x1, u1)
     end
     for k = 1:nlp.N-1
         t = nlp.times[k]
         h = nlp.times[k+1] - nlp.times[k]
         x2,u2 = Z[ix[k+1]], Z[iu[k+1]]
-        J2 = stagecost(nlp.obj[k+1], x2, u2)
+        J2 = stagecost(Jstage, x2, u2)
         
         xm = nlp.xm[k]
         um = nlp.um[k]
@@ -52,6 +54,11 @@ function eval_f(nlp::NLP, Z)
         J += h/6 * (J1 + 4Jm + J2)
         
         J1 = J2
+    end
+    let k = nlp.N
+        x = Z[ix[k]]
+        JN = termcost(Jterm, x)
+        J += JN
     end
     return J
 end
@@ -71,6 +78,8 @@ function grad_f!(nlp::NLP{n,m}, grad, Z) where {n,m}
 
     grad .= 0
     
+    Jstage = nlp.obj[1]
+    Jterm = nlp.obj[end]
     for k = 1:nlp.N-1
         x1,x2 = Z[ix[k]], Z[ix[k+1]]
         u1,u2 = Z[iu[k]], Z[iu[k+1]]
@@ -87,17 +96,23 @@ function grad_f!(nlp::NLP{n,m}, grad, Z) where {n,m}
         dxmx1, dxmx2 = nlp.Am[k,2], nlp.Am[k,3]
         dxmu1, dxmu2 = nlp.Bm[k,2], nlp.Bm[k,3]
         
-        dx1 = obj[k].Q*x1 + obj[k].q
-        dx2 = obj[k+1].Q*x2 + obj[k+1].q
-        du1 = obj[k].R*u1 + obj[k].r
-        du2 = obj[k+1].R*u2 + obj[k+1].r
-        dxm = obj[k].Q*xm + obj[k].q
-        dum = obj[k].R*um + obj[k].r
+        Q,q = Jstage.Q, Jstage.q
+        R,r = Jstage.R, Jstage.r
+        dx1 = Q*x1 + q
+        dx2 = Q*x2 + q
+        du1 = R*u1 + r
+        du2 = R*u2 + r
+        dxm = Q*xm + q
+        dum = R*um + r
         
         grad[ix[k]] += h/6 * (dx1 + 4dxmx1'dxm)
         grad[ix[k+1]] += h/6 * (dx2 + 4dxmx2'dxm)
         grad[iu[k]] += h/6 * (du1 + 4dxmu1'dxm + dum/2)
         grad[iu[k+1]] += h/6 * (du2 + 4dxmu2'dxm + dum/2)
+    end
+    let k = nlp.N
+        x = Z[ix[k]]
+        grad[ix[k]] += Jterm.Q * x + Jterm.q
     end
     return nothing
 end

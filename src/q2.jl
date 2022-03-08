@@ -15,10 +15,8 @@ using Ipopt
 using JLD2
 
 include("quadratic_cost.jl")
-# include("../test/nlp_test.jl")
 include("cartpole.jl")
 
-# include("q2_types.jl")
 include("q2_prob.jl")
 include("q2_nlp.jl")
 include("q2_dynamics.jl")
@@ -40,6 +38,7 @@ function test_costs()
      
     # Test the cost
     @test eval_f(nlp, Z) ≈ 0.22766546346850902 atol=1e-6
+    
 
     # Test the cost gradient with FiniteDiff
     grad = zero(Z)
