@@ -1,4 +1,5 @@
 using MeshCat, GeometryBasics, Colors, CoordinateTransformations, Rotations
+using RobotDynamics: state_dim, control_dim
 
 
 ###############################################
@@ -41,7 +42,7 @@ function visualize!(vis, model::RobotZoo.Cartpole, x::StaticVector)
     settransform!(vis["robot","cart","pole","geom"], LinearMap(UnitQuaternion(q)))
 end
 
-function visualize!(vis, model::AbstractModel, tf::Real, X)
+function visualize!(vis, model::RobotDynamics.AbstractModel, tf::Real, X)
     fps = Int(round((length(X)-1)/tf))
     anim = MeshCat.Animation(fps)
     n = state_dim(model)
@@ -57,10 +58,37 @@ end
 ###############################################
 # Dynamics
 ###############################################
+mutable struct DynamicsEvals 
+    dynamics::Int
+    jacobian::Int
+end
+const DYNAMICS_EVALS = DynamicsEvals(0,0)
+
+macro dynamicsevals(expr)
+    quote
+        _evals = DYNAMICS_EVALS.dynamics 
+        $(esc(expr))
+        DYNAMICS_EVALS.dynamics - _evals
+    end
+end
+
+macro jacobianevals(expr)
+    quote
+        _evals = DYNAMICS_EVALS.jacobian
+        $(esc(expr))
+        DYNAMICS_EVALS.jacobian - _evals
+    end
+end
+
+function dynamics(model::RobotZoo.Cartpole, x, u, t)
+    DYNAMICS_EVALS.dynamics += 1
+    RobotDynamics.dynamics(model, x, u)
+end
 
 const CARTPOLE_JACOBIAN_CACHE = zeros(4, 5)
 function dynamics_jacobians(model::RobotZoo.Cartpole, x, u, t)
-    z = StaticKnotPoint(x, u, NaN, t)
+    DYNAMICS_EVALS.jacobian += 1
+    z = RobotDynamics.StaticKnotPoint(x, u, NaN, t)
     RobotDynamics.jacobian!(CARTPOLE_JACOBIAN_CACHE, model, z)
     ix = SA[1,2,3,4]
     iu = SA[5]
@@ -69,23 +97,8 @@ function dynamics_jacobians(model::RobotZoo.Cartpole, x, u, t)
     return A,B
 end
 
-# function RobotDynamics.discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel,
-#         x, u, t, dt) where {Q<:RobotDynamics.Explicit}
-#     z = KnotPoint(x, u, dt, t)
-#     RobotDynamics.discrete_jacobian!(Q, ∇f, model, z)
-# end
 
-# function ∇discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel, x, u, t, dt, b) where {Q<:RobotDynamics.Explicit}
-#     z = KnotPoint(x, u, dt, t)
-#     RobotDynamics.∇discrete_jacobian!(Q, ∇f, model, z, b)
-# end
-
-
-###############################################
-# Simulation
-###############################################
-
-function simulate(model::AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
+function simulate(model::RobotDynamics.AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
     n,m = size(model)
     times = range(0, tf, step=dt)
     N = length(times)
@@ -112,7 +125,7 @@ end
 struct NullController{m} 
     NullController(m::Integer) = new{Int(m)}()
 end
-NullController(model::AbstractModel) = NullController(control_dim(model))
+NullController(model::RobotDynamics.AbstractModel) = NullController(control_dim(model))
 get_control(ctrl::NullController{m}, x, t) where m = @SVector zeros(m)
 
 # function run_tests()
