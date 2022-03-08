@@ -1,5 +1,9 @@
 using MeshCat, GeometryBasics, Colors, CoordinateTransformations, Rotations
 
+
+###############################################
+# Visualization
+###############################################
 function defcolor(c1, c2, c1def, c2def)
     if !isnothing(c1) && isnothing(c2)
         c2 = c1
@@ -50,17 +54,36 @@ function visualize!(vis, model::AbstractModel, tf::Real, X)
     setanimation!(vis, anim)
 end
 
-function RobotDynamics.discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel,
-        x, u, t, dt) where {Q<:RobotDynamics.Explicit}
-    z = KnotPoint(x, u, dt, t)
-    RobotDynamics.discrete_jacobian!(Q, ∇f, model, z)
+###############################################
+# Dynamics
+###############################################
+
+const CARTPOLE_JACOBIAN_CACHE = zeros(4, 5)
+function dynamics_jacobians(model::RobotZoo.Cartpole, x, u, t)
+    z = StaticKnotPoint(x, u, NaN, t)
+    RobotDynamics.jacobian!(CARTPOLE_JACOBIAN_CACHE, model, z)
+    ix = SA[1,2,3,4]
+    iu = SA[5]
+    A = CARTPOLE_JACOBIAN_CACHE[ix,ix]
+    B = CARTPOLE_JACOBIAN_CACHE[ix,iu]
+    return A,B
 end
 
-function ∇discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel, x, u, t, dt, b) where {Q<:RobotDynamics.Explicit}
-    z = KnotPoint(x, u, dt, t)
-    RobotDynamics.∇discrete_jacobian!(Q, ∇f, model, z, b)
-end
+# function RobotDynamics.discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel,
+#         x, u, t, dt) where {Q<:RobotDynamics.Explicit}
+#     z = KnotPoint(x, u, dt, t)
+#     RobotDynamics.discrete_jacobian!(Q, ∇f, model, z)
+# end
 
+# function ∇discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel, x, u, t, dt, b) where {Q<:RobotDynamics.Explicit}
+#     z = KnotPoint(x, u, dt, t)
+#     RobotDynamics.∇discrete_jacobian!(Q, ∇f, model, z, b)
+# end
+
+
+###############################################
+# Simulation
+###############################################
 
 function simulate(model::AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
     n,m = size(model)
@@ -82,12 +105,16 @@ function simulate(model::AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
     return X,U,times
 end
 
+###############################################
+# Null Controller
+###############################################
+
 struct NullController{m} 
     NullController(m::Integer) = new{Int(m)}()
 end
 NullController(model::AbstractModel) = NullController(control_dim(model))
 get_control(ctrl::NullController{m}, x, t) where m = @SVector zeros(m)
 
-function run_tests()
-    include(joinpath(@__DIR__,"..","test","q2.jl"))
-end
+# function run_tests()
+#     include(joinpath(@__DIR__,"..","test","q2.jl"))
+# end
