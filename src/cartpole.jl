@@ -97,6 +97,20 @@ function dynamics_jacobians(model::RobotZoo.Cartpole, x, u, t)
     return A,B
 end
 
+function discrete_dynamics(model::RobotDynamics.AbstractModel, x, u, t, dt)
+    z = RobotDynamics.StaticKnotPoint(x, u, dt, t)
+    RobotDynamics.discrete_dynamics(RobotDynamics.RK4, model, z)
+end
+
+function discrete_jacobian(model::RobotDynamics.AbstractModel, x, u, t, dt)
+    z = RobotDynamics.StaticKnotPoint(x, u, dt, t)
+    RobotDynamics.discrete_jacobian!(RobotDynamics.RK4, CARTPOLE_JACOBIAN_CACHE, model, z)
+    ix = SA[1,2,3,4]
+    iu = SA[5]
+    A = CARTPOLE_JACOBIAN_CACHE[ix,ix]
+    B = CARTPOLE_JACOBIAN_CACHE[ix,iu]
+    return A,B
+end
 
 function simulate(model::RobotDynamics.AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
     n,m = size(model)
@@ -110,7 +124,8 @@ function simulate(model::RobotDynamics.AbstractModel, x0, ctrl; tf=2.0, dt=0.025
 
     for k = 1:N-1
         U[k] = get_control(ctrl, X[k], times[k]) + w*@SVector randn(m)
-        X[k+1] = discrete_dynamics(RK4, model, X[k], U[k], times[k], dt)
+        # X[k+1] = discrete_dynamics(RK4, model, X[k], U[k], times[k], dt)
+        X[k+1] = discrete_dynamics(model, X[k], U[k], times[k], dt)
     end
     tend = time_ns()
     rate = N / (tend - tstart) * 1e9

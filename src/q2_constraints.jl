@@ -11,6 +11,12 @@ The constraints should be ordered as follows:
 2. Hermite Simpson Dynamics: ``\\frac{h}{6} (f(x_k, u_k) + 4 f(x_m, u_m) + f(x_{k+1}, u_{k+1})) + x_k - x_{k+1} = 0``
 3. Terminal constraint ``x_N = x_\\text{goal}``
 
+Consider leveraging the caches in `nlp` to evaluate the dynamics and the midpoints 
+before the main loop, so that you can making redundant calls to the dynamics.
+
+Remember, you will loose points if you make more dynamics calls than necessary. 
+Start with something that works, then think about how to eliminate any redundant 
+dynamics calls.
 """
 function eval_c!(nlp::NLP{n,m}, c, Z) where {n,m}
     N = nlp.N
@@ -56,6 +62,15 @@ end
     jac_c!(nlp, jac, Z)
 
 Evaluate the constraint Jacobian, storing the result in the matrix `jac`.
+You will need to apply the chain rule to calculate the derivative of the dynamics
+constraints with respect to the states and controls at the current and next time 
+steps.
+
+### Use of automated differentiation tools
+You are not allowed to use automatic differentiation methods for this function. 
+You are only allowed to call `dynamics_jacobians` (which under the hood does use
+ForwardDiff). You are allowed to check your answer with these tools, but your final 
+solution should not use them.
 """
 function jac_c!(nlp::NLP{n,m}, jac, Z) where {n,m}
     # TODO: Initial condition

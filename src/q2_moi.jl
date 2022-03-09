@@ -1,19 +1,19 @@
-function MOI.eval_objective(prob::NLP, x)
-    eval_f(prob, x)
+function MOI.eval_objective(nlp::NLP, x)
+    eval_f(nlp, x)
 end
 
-function MOI.eval_objective_gradient(prob::NLP, grad_f, x)
-    grad_f!(prob, grad_f, x)
+function MOI.eval_objective_gradient(nlp::NLP, grad_f, x)
+    grad_f!(nlp, grad_f, x)
     return nothing
 end
 
-function MOI.eval_constraint(prob::NLP,g,x)
-    eval_c!(prob, g, x)
+function MOI.eval_constraint(nlp::NLP,g,x)
+    eval_c!(nlp, g, x)
     return nothing
 end
 
-function MOI.eval_constraint_jacobian(prob::NLP, vec, x)
-    n_nlp, m_nlp = num_primals(prob), num_duals(prob)
+function MOI.eval_constraint_jacobian(nlp::NLP, vec, x)
+    n_nlp, m_nlp = num_primals(nlp), num_duals(nlp)
     jac = reshape(vec, m_nlp, n_nlp)
     # ForwardDiff.jacobian!(reshape(jac,m_nlp,n_nlp), (c,x) -> eval_c!(nlp, c, x), zeros(m_nlp), x)
     jac_c!(nlp, jac, x)

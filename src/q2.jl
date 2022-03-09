@@ -1,4 +1,5 @@
-import Pkg; Pkg.activate(joinpath(@__DIR__,"..")); 
+import Pkg; Pkg.activate(joinpath(@__DIR__,"..")); Pkg.instantiate()
+using Random
 using ForwardDiff
 using Test
 using RobotZoo
@@ -16,78 +17,48 @@ using JLD2
 
 include("quadratic_cost.jl")
 include("cartpole.jl")
+include("q2_tests.jl")
 
+## Part a: Cost Functions (15 pts)
 include("q2_prob.jl")
 include("q2_nlp.jl")
-include("q2_dynamics.jl")
-include("q2_cost_methods.jl")
-include("q2_constraints.jl")
-include("moi.jl")
-
-prob = CartpoleProblem()
-X,U = get_initial_trajectory(prob)
-nlp = NLP(prob)
-Z0 = packZ(nlp, X, U)
-Zsol,solver = solve(Z0, nlp)
-
-function test_costs()
-    prob = CartpoleProblem()
-    nlp = NLP(prob)
-    X,U = get_initial_trajectory(prob) 
-    Z = packZ(nlp, X, U)
-     
-    # Test the cost
-    @test eval_f(nlp, Z) ≈ 0.22766546346850902 atol=1e-6
-    
-
-    # Test the cost gradient with FiniteDiff
-    grad = zero(Z)
-    grad_f!(nlp, grad, Z)
-    grad_fd = FiniteDiff.finite_difference_gradient(x->eval_f(nlp, x), Z)
-    @test norm(grad - grad_fd) < 1e-8
-end
+include("q2_dynamics.jl")      # SOLUTION
+include("q2_cost_methods.jl")  # TODO: complete methods here
 test_costs()
 
-function test_constraints()
+## Part b: Constraints (20 pts)
+include("q2_constraints.jl")   # TODO: complete methods here
+test_constraints()
+
+## Part c: Solve (5 pts)
+include("q2_moi.jl")
+let
     prob = CartpoleProblem()
-    nlp = NLP(prob)
-    X,U = get_initial_trajectory(prob) 
-    Z = packZ(nlp, X, U)
-
-    resfile = joinpath(@__DIR__, "Q2.jld2")
-
-    # Constraint function
-    c = zeros(num_duals(nlp))
-    devals = @dynamicsevals eval_c!(nlp, c, Z)
-    @test devals <= 301
-    @test devals <= 201
-    @test norm(c - load(resfile, "c0")) < 1e-8
-
-    # Calc constraint Jacobian and check Jacobian evals
-    jac = zeros(num_duals(nlp), num_primals(nlp))
-    jevals = @jacobianevals jac_c!(nlp, jac, Z)
-    devals = @dynamicsevals jac_c!(nlp, jac, Z)
-    @test devals <= 301
-    @test devals <= 201
-    @test devals <= 101
-    @test devals == 0 
-    @test jevals <= 301
-    @test jevals <= 201
-    @test jevals > 200  # this checks that they don't use ForwardDiff or FiniteDiff
-    
-    # Check constraint Jacobian with FiniteDiff
-    jac_fd = zero(jac)
-    FiniteDiff.finite_difference_jacobian!(jac_fd, (y,x)->eval_c!(nlp, y, x), Z)
-    @test norm(jac - jac_fd) < 1e-6
+    X,U = get_initial_trajectory(prob)
+    global nlp = NLP(prob)
+    Z0 = packZ(nlp, X, U)
+    global Zsol
+    Zsol,solver = solve(Z0, nlp)
 end
-c0 = test_constraints()
 
-## Visualization
-let model = prob.model
+# Visualization
+let prob = CartpoleProblem() 
+    model = prob.model
     global vis = Visualizer()
     set_mesh!(vis, model)
     render(vis)
 end
-let X = [Zsol[xi] for xi in nlp.xinds]
-    visualize!(vis, prob.model, prob.tf, X)
+let Z = Zsol 
+    X, = unpackZ(nlp, Z)
+    visualize!(vis, nlp.model, nlp.tf, X)
 end
+
+## Part (d): Track the solution (10 pts)
+include("q2_controller.jl")
+let Zref = copy(Zsol)
+    ctrl = gen_controller(nlp, Zref)
+    model2 = RobotZoo.Cartpole(1.1, 0.2, 0.5, 9.81)
+    Xsim, Usim, tsim = simulate(model2, nlp.x0, ctrl, tf=5nlp.tf, dt=0.005)
+    visualize!(vis, model2, tsim[end], Xsim)
+end
+test_tracking()
