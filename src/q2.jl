@@ -17,7 +17,7 @@ using JLD2
 using SparseArrays
 
 include("quadratic_cost.jl")
-include("cartpole.jl")
+include("q2_model.jl")
 include("q2_tests.jl")
 include("sparseblocks.jl")
 

@@ -1,4 +1,7 @@
 const NUMQUESTIONS = 2
+if !(@isdefined SUFFIX)
+    SUFFIX = ""
+end
 
 questions_to_grade = collect(1:NUMQUESTIONS)
 if !isempty(ARGS)
@@ -18,7 +21,7 @@ end
 
 # Create a module for each question
 for i in 1:NUMQUESTIONS 
-@eval module $(Symbol("Q" * string(i)))
+@eval module $(Symbol("Q" * string(i) * SUFFIX))
 include("autograder.jl")
 getname() = string(split(string(@__MODULE__), ".")[end])
 grade() = Autograder.gradequestion(getname()) 
@@ -29,6 +32,8 @@ end
 solutiondir = joinpath(@__DIR__, "..")
 
 # Grade all of the questions
+modules = [@eval $(Symbol("Q" * string(i) * SUFFIX)) for i = 1:NUMQUESTIONS]
+modules[2].grade()
 results = map(questions_to_grade) do question 
     mod = modules[question]
     mod.checktestsets(solutiondir)
