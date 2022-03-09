@@ -71,6 +71,7 @@ function solve(x0,prob::NLP;
     solver.options["max_iter"] = max_iter
     solver.options["tol"] = tol
     solver.options["constr_viol_tol"] = c_tol
+    solver.options["max_cpu_time"] = 60.0
 
     x = MOI.add_variables(solver, n_nlp)
 
