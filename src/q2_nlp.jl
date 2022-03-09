@@ -46,7 +46,9 @@ struct NLP{n,m,L} <: MOI.AbstractNLPEvaluator
     fm::Vector{SVector{4,Float64}}
     Am::Matrix{SMatrix{4,4,Float64,16}}
     Bm::Matrix{SMatrix{4,1,Float64,4}}
-    function NLP(prob::CartpoleProblem)
+    use_sparse_jacobian::Bool
+    blocks::BlockViews
+    function NLP(prob::CartpoleProblem; use_sparse_jacobian::Bool=false)
         n,m,N = prob.n, prob.m, prob.N
         xinds = [SVector{n}((k-1)*(n+m) .+ (1:n)) for k = 1:N]
         uinds = [SVector{m}((k-1)*(n+m) .+ (n+1:n+m)) for k = 1:N]
@@ -60,10 +62,14 @@ struct NLP{n,m,L} <: MOI.AbstractNLPEvaluator
         fm = deepcopy(f)
         Am = [@SMatrix zeros(n,n) for k = 1:N, i = 1:3]
         Bm = [@SMatrix zeros(n,m) for k = 1:N, i = 1:3]
+        Np = (n + m) * N
+        Nd = n*(N + 1)
+        blocks = BlockViews(Nd, Np)
         new{n,m,typeof(prob.model)}(
             prob.model, obj,
             N, prob.tf, prob.x0, prob.xf, xinds, uinds, times,
-            f,A,B,xm,um,fm,Am,Bm
+            f,A,B,xm,um,fm,Am,Bm,
+            use_sparse_jacobian, blocks
         )
     end
 end

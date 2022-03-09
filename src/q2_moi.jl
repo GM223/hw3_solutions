@@ -13,10 +13,14 @@ function MOI.eval_constraint(nlp::NLP,g,x)
 end
 
 function MOI.eval_constraint_jacobian(nlp::NLP, vec, x)
-    n_nlp, m_nlp = num_primals(nlp), num_duals(nlp)
-    jac = reshape(vec, m_nlp, n_nlp)
-    # ForwardDiff.jacobian!(reshape(jac,m_nlp,n_nlp), (c,x) -> eval_c!(nlp, c, x), zeros(m_nlp), x)
-    jac_c!(nlp, jac, x)
+    if nlp.use_sparse_jacobian
+        # Calls the Jacobian with a Vector instead of a Matrix
+        jac_c!(nlp, vec, x)
+    else
+        n_nlp, m_nlp = num_primals(nlp), num_duals(nlp)
+        jac = reshape(vec, m_nlp, n_nlp)
+        jac_c!(nlp, jac, x)
+    end
     return nothing
 end
 
@@ -25,7 +29,20 @@ function MOI.features_available(prob::NLP)
 end
 
 MOI.initialize(prob::NLP, features) = nothing
-MOI.jacobian_structure(nlp::NLP) = vec(Tuple.(CartesianIndices(zeros(num_duals(nlp), num_primals(nlp)))))
+
+function MOI.jacobian_structure(nlp::NLP)
+    if nlp.use_sparse_jacobian
+        # EXTRA CREDIT: return the Jacobian sparsity structure (see MathOptInterface docs)
+        rc = Tuple{Int,Int}[]
+        # SOLUTION
+        initialize_sparsity!(nlp)
+        rc = getrc(nlp.blocks)
+        # END SOLUTION
+        return rc
+    else
+        return vec(Tuple.(CartesianIndices(zeros(num_duals(nlp), num_primals(nlp)))))
+    end
+end
 
 """
     solve(x0, nlp::NLP; tol, c_tol, max_iter)

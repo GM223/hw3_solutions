@@ -14,10 +14,12 @@ using FiniteDiff
 import MathOptInterface as MOI
 using Ipopt
 using JLD2
+using SparseArrays
 
 include("quadratic_cost.jl")
 include("cartpole.jl")
 include("q2_tests.jl")
+include("sparseblocks.jl")
 
 ## Part a: Cost Functions (15 pts)
 include("q2_prob.jl")
@@ -37,9 +39,10 @@ let
     X,U = get_initial_trajectory(prob)
     global nlp = NLP(prob)
     Z0 = packZ(nlp, X, U)
-    global Zsol
+    global Zsol, solver
     Zsol,solver = solve(Z0, nlp)
 end
+test_solution(nlp, Zsol, solver)
 
 # Visualization
 let prob = CartpoleProblem() 
@@ -62,3 +65,7 @@ let Zref = copy(Zsol)
     visualize!(vis, model2, tsim[end], Xsim)
 end
 test_tracking()
+
+## Part (e): EXTRA CREDIT Leveraging sparsity
+test_extracredit()
+typeof(getrc(nlp.blocks))
