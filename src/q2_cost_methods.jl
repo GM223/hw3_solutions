@@ -27,13 +27,13 @@ and
 u_m = \\frac{1}{2} (u_1 + u_2)
 ```
 """
-function eval_f(nlp::NLP, Z)
+function eval_f(nlp::NLP, Z) 
     # TASK: compute the objective value (cost)
     J = 0.0
     
     # SOLUTION
-    Jstage = nlp.obj[1]
-    Jterm = nlp.obj[end]
+    Jstage = nlp.stagecost
+    Jterm = nlp.termcost
     ix,iu = nlp.xinds, nlp.uinds
     evaluate_dynamics!(nlp, Z)
     evaluate_midpoints!(nlp, Z)
@@ -50,7 +50,7 @@ function eval_f(nlp::NLP, Z)
         
         xm = nlp.xm[k]
         um = nlp.um[k]
-        Jm = stagecost(nlp.obj[k], xm, um)
+        Jm = stagecost(Jstage, xm, um)
         J += h/6 * (J1 + 4Jm + J2)
         
         J1 = J2
@@ -70,7 +70,6 @@ Evaluate the gradient of the objective at `Z`, storing the result in `grad`.
 """
 function grad_f!(nlp::NLP{n,m}, grad, Z) where {n,m}
     ix,iu = nlp.xinds, nlp.uinds
-    obj = nlp.obj
     evaluate_dynamics!(nlp, Z)
     evaluate_midpoints!(nlp, Z)
     evaluate_dynamics_jacobians!(nlp, Z)
@@ -78,8 +77,8 @@ function grad_f!(nlp::NLP{n,m}, grad, Z) where {n,m}
 
     grad .= 0
     
-    Jstage = nlp.obj[1]
-    Jterm = nlp.obj[end]
+    Jstage = nlp.stagecost
+    Jterm = nlp.termcost
     for k = 1:nlp.N-1
         x1,x2 = Z[ix[k]], Z[ix[k+1]]
         u1,u2 = Z[iu[k]], Z[iu[k+1]]
@@ -125,7 +124,6 @@ Evaluate the Hessian of the objective at `Z`, storing the result in `hess`.
 function hess_f!(nlp::NLP{n,m}, hess, Z) where {n,m}
     # TASK: Compute the objective hessian
     ix,iu = nlp.xinds, nlp.uinds
-    obj = nlp.obj
     hess .= 0
     for k = 1:nlp.N-1
         ix1, ix2 = ix[k], ix[k+1]

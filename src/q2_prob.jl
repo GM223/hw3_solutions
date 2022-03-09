@@ -11,12 +11,12 @@ Base.@kwdef struct CartpoleProblem{T}
     Qf::Diagonal{T, SVector{4,T}} = Diagonal(@SVector fill(1e1, 4))
 end
 
-function get_objective(prob::CartpoleProblem)
-    costfun = LQRCost(prob.Q, prob.R, prob.xf)
-    costterm = LQRCost(prob.Qf, prob.R, prob.xf)
-    obj = push!(fill(costfun, prob.N-1), costterm)
-    return obj
-end
+# function get_objective(prob::CartpoleProblem)
+#     costfun = LQRCost(prob.Q, prob.R, prob.xf)
+#     costterm = LQRCost(prob.Qf, prob.R, prob.xf)
+#     obj = push!(fill(costfun, prob.N-1), costterm)
+#     return obj
+# end
 
 """
     get_initial_trajectory(prob)

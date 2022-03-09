@@ -91,8 +91,8 @@ function gen_controller(nlp, Zref)
         B[k] .= Bk
     end
 
-    Jstage = nlp.obj[1]
-    Jterm = nlp.obj[end]
+    Jstage = nlp.stagecost
+    Jterm = nlp.termcost
     Q = Jstage.Q
     R = Jstage.R * 1e-2
     Qf = Jterm.Q
@@ -109,6 +109,7 @@ function gen_controller(nlp, Zref)
 
     # Build the controller
     ctrl = LQRController(K, Xref, Uref, nlp.times);
+    # END SOLUTION
 
     # Return the controller
     # must support `get_control(ctrl, x, t)`

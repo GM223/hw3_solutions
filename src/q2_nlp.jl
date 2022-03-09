@@ -30,7 +30,8 @@ The NLP supports the following API for evaluating various pieces of the NLP:
 """
 struct NLP{n,m,L} <: MOI.AbstractNLPEvaluator
     model::L                                 # dynamics model
-    obj::Vector{QuadraticCost{n,m,Float64}}  # objective function
+    stagecost::QuadraticCost{n,m,Float64}    # stage cost function
+    termcost::QuadraticCost{n,m,Float64}     # terminal cost function
     N::Int                                   # number of knot points
     tf::Float64                              # total time (sec)
     x0::MVector{n,Float64}                   # initial condition
@@ -53,7 +54,8 @@ struct NLP{n,m,L} <: MOI.AbstractNLPEvaluator
         xinds = [SVector{n}((k-1)*(n+m) .+ (1:n)) for k = 1:N]
         uinds = [SVector{m}((k-1)*(n+m) .+ (n+1:n+m)) for k = 1:N]
         times = collect(range(0, prob.tf, length=N))
-        obj = get_objective(prob)
+        costfun = LQRCost(prob.Q, prob.R, prob.xf)
+        costterm = LQRCost(prob.Qf, prob.R, prob.xf)
         f = [@SVector zeros(n) for k = 1:N]
         A = [@SMatrix zeros(n,n) for k = 1:N]
         B = [@SMatrix zeros(n,m) for k = 1:N]
@@ -66,7 +68,7 @@ struct NLP{n,m,L} <: MOI.AbstractNLPEvaluator
         Nd = n*(N + 1)
         blocks = BlockViews(Nd, Np)
         new{n,m,typeof(prob.model)}(
-            prob.model, obj,
+            prob.model, costfun, costterm,
             N, prob.tf, prob.x0, prob.xf, xinds, uinds, times,
             f,A,B,xm,um,fm,Am,Bm,
             use_sparse_jacobian, blocks
