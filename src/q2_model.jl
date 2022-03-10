@@ -1,5 +1,10 @@
 using MeshCat, GeometryBasics, Colors, CoordinateTransformations, Rotations
+using RobotDynamics: state_dim, control_dim
 
+
+###############################################
+# Visualization
+###############################################
 function defcolor(c1, c2, c1def, c2def)
     if !isnothing(c1) && isnothing(c2)
         c2 = c1
@@ -37,7 +42,7 @@ function visualize!(vis, model::RobotZoo.Cartpole, x::StaticVector)
     settransform!(vis["robot","cart","pole","geom"], LinearMap(UnitQuaternion(q)))
 end
 
-function visualize!(vis, model::AbstractModel, tf::Real, X)
+function visualize!(vis, model::RobotDynamics.AbstractModel, tf::Real, X)
     fps = Int(round((length(X)-1)/tf))
     anim = MeshCat.Animation(fps)
     n = state_dim(model)
@@ -50,19 +55,64 @@ function visualize!(vis, model::AbstractModel, tf::Real, X)
     setanimation!(vis, anim)
 end
 
-function RobotDynamics.discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel,
-        x, u, t, dt) where {Q<:RobotDynamics.Explicit}
-    z = KnotPoint(x, u, dt, t)
-    RobotDynamics.discrete_jacobian!(Q, ∇f, model, z)
+###############################################
+# Dynamics
+###############################################
+mutable struct DynamicsEvals 
+    dynamics::Int
+    jacobian::Int
+end
+const DYNAMICS_EVALS = DynamicsEvals(0,0)
+
+macro dynamicsevals(expr)
+    quote
+        _evals = DYNAMICS_EVALS.dynamics 
+        $(esc(expr))
+        DYNAMICS_EVALS.dynamics - _evals
+    end
 end
 
-function ∇discrete_jacobian!(::Type{Q}, ∇f, model::AbstractModel, x, u, t, dt, b) where {Q<:RobotDynamics.Explicit}
-    z = KnotPoint(x, u, dt, t)
-    RobotDynamics.∇discrete_jacobian!(Q, ∇f, model, z, b)
+macro jacobianevals(expr)
+    quote
+        _evals = DYNAMICS_EVALS.jacobian
+        $(esc(expr))
+        DYNAMICS_EVALS.jacobian - _evals
+    end
 end
 
+function dynamics(model::RobotZoo.Cartpole, x, u, t)
+    DYNAMICS_EVALS.dynamics += 1
+    RobotDynamics.dynamics(model, x, u)
+end
 
-function simulate(model::AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
+const CARTPOLE_JACOBIAN_CACHE = zeros(4, 5)
+function dynamics_jacobians(model::RobotZoo.Cartpole, x, u, t)
+    DYNAMICS_EVALS.jacobian += 1
+    z = RobotDynamics.StaticKnotPoint(x, u, NaN, t)
+    RobotDynamics.jacobian!(CARTPOLE_JACOBIAN_CACHE, model, z)
+    ix = SA[1,2,3,4]
+    iu = SA[5]
+    A = CARTPOLE_JACOBIAN_CACHE[ix,ix]
+    B = CARTPOLE_JACOBIAN_CACHE[ix,iu]
+    return A,B
+end
+
+function discrete_dynamics(model::RobotDynamics.AbstractModel, x, u, t, dt)
+    z = RobotDynamics.StaticKnotPoint(x, u, dt, t)
+    RobotDynamics.discrete_dynamics(RobotDynamics.RK4, model, z)
+end
+
+function discrete_jacobian(model::RobotDynamics.AbstractModel, x, u, t, dt)
+    z = RobotDynamics.StaticKnotPoint(x, u, dt, t)
+    RobotDynamics.discrete_jacobian!(RobotDynamics.RK4, CARTPOLE_JACOBIAN_CACHE, model, z)
+    ix = SA[1,2,3,4]
+    iu = SA[5]
+    A = CARTPOLE_JACOBIAN_CACHE[ix,ix]
+    B = CARTPOLE_JACOBIAN_CACHE[ix,iu]
+    return A,B
+end
+
+function simulate(model::RobotDynamics.AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
     n,m = size(model)
     times = range(0, tf, step=dt)
     N = length(times)
@@ -74,7 +124,8 @@ function simulate(model::AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
 
     for k = 1:N-1
         U[k] = get_control(ctrl, X[k], times[k]) + w*@SVector randn(m)
-        X[k+1] = discrete_dynamics(RK4, model, X[k], U[k], times[k], dt)
+        # X[k+1] = discrete_dynamics(RK4, model, X[k], U[k], times[k], dt)
+        X[k+1] = discrete_dynamics(model, X[k], U[k], times[k], dt)
     end
     tend = time_ns()
     rate = N / (tend - tstart) * 1e9
@@ -82,12 +133,16 @@ function simulate(model::AbstractModel, x0, ctrl; tf=2.0, dt=0.025, w=0.1)
     return X,U,times
 end
 
+###############################################
+# Null Controller
+###############################################
+
 struct NullController{m} 
     NullController(m::Integer) = new{Int(m)}()
 end
-NullController(model::AbstractModel) = NullController(control_dim(model))
+NullController(model::RobotDynamics.AbstractModel) = NullController(control_dim(model))
 get_control(ctrl::NullController{m}, x, t) where m = @SVector zeros(m)
 
-function run_tests()
-    include(joinpath(@__DIR__,"..","test","q2.jl"))
-end
+# function run_tests()
+#     include(joinpath(@__DIR__,"..","test","q2.jl"))
+# end
