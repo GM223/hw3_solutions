@@ -33,7 +33,6 @@ solutiondir = joinpath(@__DIR__, "..")
 
 # Grade all of the questions
 modules = [@eval $(Symbol("Q" * string(i) * SUFFIX)) for i = 1:NUMQUESTIONS]
-modules[2].grade()
 results = map(questions_to_grade) do question 
     mod = modules[question]
     mod.checktestsets(solutiondir)
