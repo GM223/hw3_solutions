@@ -24,7 +24,6 @@ include("sparseblocks.jl")
 ## Part a: Cost Functions (15 pts)
 include("q2_prob.jl")
 include("q2_nlp.jl")
-include("q2_dynamics.jl")      # SOLUTION
 include("q2_cost_methods.jl")  # TODO: complete methods here
 test_costs()
 

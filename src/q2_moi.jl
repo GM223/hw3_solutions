@@ -34,10 +34,6 @@ function MOI.jacobian_structure(nlp::NLP)
     if nlp.use_sparse_jacobian
         # EXTRA CREDIT: return the Jacobian sparsity structure (see MathOptInterface docs)
         rc = Tuple{Int,Int}[]
-        # SOLUTION
-        initialize_sparsity!(nlp)
-        rc = getrc(nlp.blocks)
-        # END SOLUTION
         return rc
     else
         return vec(Tuple.(CartesianIndices(zeros(num_duals(nlp), num_primals(nlp)))))

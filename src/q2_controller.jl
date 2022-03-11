@@ -76,40 +76,6 @@ function gen_controller(nlp, Zref)
     # TASK: Build a controller that tracks `Zref`
     ctrl = NullController(nlp.model)
 
-    # SOLUTION:
-    # Generate A,B matrices
-    N = nlp.N
-    n,m = state_dim(nlp.model), control_dim(nlp.model)
-    Xref,Uref = unpackZ(nlp, Zref)
-    A = [zeros(n,n) for k = 1:N-1]
-    B = [zeros(n,m) for k = 1:N-1]
-    for k = 1:N-1
-        t = nlp.times[k]
-        dt = nlp.times[k+1] - nlp.times[k]
-        Ak,Bk = discrete_jacobian(nlp.model, Xref[k], Uref[k], t, dt)
-        A[k] .= Ak
-        B[k] .= Bk
-    end
-
-    Jstage = nlp.stagecost
-    Jterm = nlp.termcost
-    Q = Jstage.Q
-    R = Jstage.R * 1e-2
-    Qf = Jterm.Q
-
-    # Get the infinite-horizon gain to stabilize it once it gets to the top
-    Kinf = lqr(A[end], B[end], Matrix(Qf), Matrix(R), max_iters=2000)
-
-    # Solve for the TVLQR gains
-    K, = tvlqr(A,B,Q,R,Qf)
-
-    # Add the infinite horizon gain
-    push!(K, Kinf)
-    Uref[end] = [0]
-
-    # Build the controller
-    ctrl = LQRController(K, Xref, Uref, nlp.times);
-    # END SOLUTION
 
     # Return the controller
     # must support `get_control(ctrl, x, t)`

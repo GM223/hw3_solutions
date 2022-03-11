@@ -24,15 +24,8 @@ function eval_c!(nlp::NLP{n,m}, c, Z) where {n,m}
     idx = xi[1]
 
     # TODO: initial condition
-    # SOLTUION
-    c[idx] = Z[xi[1]] - nlp.x0
-    # END SOLUTION
 
     # Dynamics
-    # SOLUTION
-    evaluate_dynamics!(nlp, Z)
-    evaluate_midpoints!(nlp, Z)
-    # END SOLUTION
     for k = 1:N-1
         idx = idx .+ n
         x1,x2 = Z[xi[k]], Z[xi[k+1]]
@@ -43,24 +36,12 @@ function eval_c!(nlp::NLP{n,m}, c, Z) where {n,m}
         # TASK: Dynamics constraint
         c[idx] .= 0
         
-        # SOLUTION
-        f1 = nlp.f[k]
-        f2 = nlp.f[k+1]
-        fm = nlp.fm[k]
-        xm,um = nlp.xm[k], nlp.um[k]
-        xm = (x1 + x2)/2 + h/8 * (f1 - f2)
-        um = (u1 + u2)/2
-        c[idx] = h * (f1 + 4fm + f2) / 6 + x1 - x2
-        # END SOLUTION
     end
 
     # TODO: terminal constraint
     idx = idx .+ n
     c[idx] .= 0
     
-    # SOLUTION
-    c[idx] = Z[xi[N]] - nlp.xf
-    # END SOLUTION
     return c
 end
 
@@ -80,18 +61,10 @@ solution should not use them.
 """
 function jac_c!(nlp::NLP{n,m}, jac, Z) where {n,m}
     # TODO: Initial condition
-    # SOLUTION
-    for i = 1:n
-        jac[i,i] = 1
-    end
 
     xi,ui = nlp.xinds, nlp.uinds
     idx = xi[1]
 
-    # SOLUTION
-    evaluate_dynamics_jacobians!(nlp, Z)
-    evaluate_midpoint_jacobians!(nlp, Z)
-    # END SOLUTION
     for k = 1:nlp.N-1
         idx = idx .+ n
         x1,x2 = Z[xi[k]], Z[xi[k+1]]
@@ -104,109 +77,14 @@ function jac_c!(nlp::NLP{n,m}, jac, Z) where {n,m}
         jac_x2 = view(jac, idx, xi[k+1])
         jac_u2 = view(jac, idx, ui[k+1])
         
-        # TODO: Dynamics constraint
-        jac_x1 .= 0 
-        jac_u1 .= 0 
-        jac_x2 .= 0 
-        jac_u2 .= 0 
-
-        # SOLUTION
-        A1,B1 = nlp.A[k], nlp.B[k]
-        A2,B2 = nlp.A[k+1], nlp.B[k+1]
-        Am,Bm = nlp.Am[k], nlp.Bm[k]
-        Am1, Am2 = nlp.Am[k,2], nlp.Am[k,3]
-        Bm1, Bm2 = nlp.Bm[k,2], nlp.Bm[k,3]
-        dx1 = h/6 * (A1 + 4*Am*Am1) + I
-        du1 = h/6 * (B1 + 4*(Am*Bm1 + Bm/2))
-        dx2 = h/6 * (A2 + 4*Am*Am2) - I
-        du2 = h/6 * (B2 + 4*(Am*Bm2 + Bm/2))
-        jac_x1 .= dx1
-        jac_u1 .= du1
-        jac_x2 .= dx2
-        jac_u2 .= du2
-        # END SOLUION
     end
     idx = idx .+ n 
     
     # TODO: Terminal constraint
-    # SOLUTION
-    for i = 1:n
-        jac[idx[i], xi[end][i]] = 1
-    end
 end
 
 
 # EXTRA CREDIT: Specify the sparsity directly in the nonzeros vector
 #               Read the MathOptInterface documentation!
 function jac_c!(nlp::NLP{n,m}, jacvec::AbstractVector, Z) where {n,m}
-    # SOLUTION
-    jac = NonzerosVector(jacvec, nlp.blocks)
-
-    for i = 1:n
-        jac[i,i] = 1
-    end
-
-    model = nlp.model
-    xi,ui = nlp.xinds, nlp.uinds
-    idx = xi[1]
-    evaluate_dynamics_jacobians!(nlp, Z)
-    evaluate_midpoint_jacobians!(nlp, Z)
-    for k = 1:nlp.N-1
-        idx = idx .+ n
-        x1,x2 = Z[xi[k]], Z[xi[k+1]]
-        u1,u2 = Z[ui[k]], Z[ui[k+1]]
-        t = nlp.times[k]
-        h = nlp.times[k+1] - nlp.times[k]
-        
-        jac_x1 = view(jac, idx, xi[k])
-        jac_u1 = view(jac, idx, ui[k])
-        jac_x2 = view(jac, idx, xi[k+1])
-        jac_u2 = view(jac, idx, ui[k+1])
-        
-        A1,B1 = nlp.A[k], nlp.B[k]
-        A2,B2 = nlp.A[k+1], nlp.B[k+1]
-        f1,f2 = nlp.f[k], nlp.f[k+1]
-        xm,um = nlp.xm[k], nlp.um[k]
-        Am,Bm = nlp.Am[k], nlp.Bm[k]
-        Am1, Am2 = nlp.Am[k,2], nlp.Am[k,3]
-        Bm1, Bm2 = nlp.Bm[k,2], nlp.Bm[k,3]
-        dx1 = h/6 * (A1 + 4*Am*Am1) + I
-        du1 = h/6 * (B1 + 4*(Am*Bm1 + Bm/2))
-        dx2 = h/6 * (A2 + 4*Am*Am2) - I
-        du2 = h/6 * (B2 + 4*(Am*Bm2 + Bm/2))
-        jac_x1 .= dx1
-        jac_u1 .= du1
-        jac_x2 .= dx2
-        jac_u2 .= du2
-    end
-    idx = idx .+ n 
-    
-    for i = 1:n
-        jac[idx[i], xi[end][i]] = 1
-    end
-end
-
-# SOLUTION
-function initialize_sparsity!(nlp)
-    n,m = size(nlp) 
-    blocks = nlp.blocks
-    for i = 1:n
-        setblock!(blocks, i, i)
-    end
-
-    xi,ui = nlp.xinds, nlp.uinds
-    idx = xi[1]
-    for k = 1:nlp.N-1
-        idx = idx .+ n
-        
-        setblock!(blocks, idx, xi[k])
-        setblock!(blocks, idx, ui[k])
-        setblock!(blocks, idx, xi[k+1])
-        setblock!(blocks, idx, ui[k+1])
-    end
-    idx = idx .+ n 
-    
-    for i = 1:n
-        setblock!(blocks, idx[i], xi[end][i])
-    end
 end
