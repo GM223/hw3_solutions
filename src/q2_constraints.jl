@@ -79,6 +79,7 @@ ForwardDiff). You are allowed to check your answer with these tools, but your fi
 solution should not use them.
 """
 function jac_c!(nlp::NLP{n,m}, jac, Z) where {n,m}
+    jac .= 0
     # TODO: Initial condition
     # SOLUTION
     for i = 1:n
